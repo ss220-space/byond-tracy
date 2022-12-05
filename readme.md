@@ -4,7 +4,7 @@ Para-byond-tracy glues together a byond server the tracy profiler allowing you t
 
 Note that the files generated cannot be loaded straight into tracy. You must use `replay.py` to load the `.utracy` file and stream "it over the network" (localhost) into `capture.exe` as part of Tracy. You can stream straight into `Tracy.exe`, but this is not advised due to performance overhead.
 
-The above script requires the `lz4` library. This can be installed with `python -m pip install lz4`.
+The above script requires the `lz4` library with the stream addon. The instructions for that are out of scope of this guide.
 
 A massive thanks to `mafemergency` for even making this possible. The below readme is adapted from the original repo (branch: `stream-to-file`) [https://github.com/mafemergency/byond-tracy/](https://github.com/mafemergency/byond-tracy/)
 
