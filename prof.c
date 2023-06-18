@@ -105,6 +105,7 @@ _Static_assert(sizeof(long long) == 8, "incorrect size");
 #	include <sys/types.h>
 #	include <sys/socket.h>
 #	include <sys/mman.h>
+#	include <sys/stat.h>
 #	include <netdb.h>
 #	include <pthread.h>
 #	include <dlfcn.h>
@@ -316,12 +317,12 @@ _Static_assert(sizeof(struct proc) >= 4, "incorrect size");
 struct event_zone_begin {
 	int unsigned tid;
 	int unsigned srcloc;
-	long long timestamp;
+	_Alignas(8) long long timestamp;
 };
 
 struct event_zone_end {
 	int unsigned tid;
-	long long timestamp;
+	_Alignas(8) long long timestamp;
 };
 
 struct event_zone_color {
@@ -331,13 +332,13 @@ struct event_zone_color {
 
 struct event_frame_mark {
 	void *name;
-	long long timestamp;
+	_Alignas(8) long long timestamp;
 };
 
 struct event_plot {
 	void *name;
 	float f;
-	long long timestamp;
+	_Alignas(8) long long timestamp;
 };
 
 struct event {
@@ -378,9 +379,15 @@ static struct {
 		long long exec_time;
 	} info;
 
+#if defined(UTRACY_WINDOWS)
 	HANDLE thread;
 	HANDLE quit;
-	FILE *fstream;
+#elif defined(UTRACY_LINUX)
+	pthread_t thread;
+	volatile int quit;
+#endif
+
+	FILE* fstream;
 
 	struct {
 		int unsigned producer_tail_cache;
@@ -755,24 +762,29 @@ void *utracy_server_thread_start(void *user) {
 
 	{
 		struct {
-			long long unsigned signature;
+			_Alignas(8) long long unsigned signature;
 			int unsigned version;
+			int unsigned padding1;
 			double multiplier;
-			long long init_begin;
-			long long init_end;
-			long long delay;
-			long long resolution;
-			long long epoch;
-			long long exec_time;
-			long long pid;
-			long long sampling_period;
+			_Alignas(8) long long init_begin;
+			_Alignas(8) long long init_end;
+			_Alignas(8) long long delay;
+			_Alignas(8) long long resolution;
+			_Alignas(8) long long epoch;
+			_Alignas(8) long long exec_time;
+			_Alignas(8) long long pid;
+			_Alignas(8) long long sampling_period;
 			char unsigned flags;
 			char unsigned cpu_arch;
 			char cpu_manufacturer[12];
 			int unsigned cpu_id;
 			char program_name[64];
 			char host_info[1024];
+			int unsigned padding2;
 		} header = {0};
+
+		_Static_assert(sizeof(header) == 1200, "header size changed!");
+		_Static_assert(sizeof(struct event) == 24, "event size changed!");
 
 		header.signature = 0x6D64796361727475llu;
 		header.version = 2;
@@ -838,18 +850,30 @@ void *utracy_server_thread_start(void *user) {
 			(void) utracy_write(&evt, sizeof(evt));
 		}
 
-		switch(WaitForSingleObject(utracy.quit, 1)) {
-			default:
-				LOG_DEBUG_ERROR;
-			case WAIT_OBJECT_0:
-				quitting = 1;
-				break;
-			case WAIT_TIMEOUT:
-				break;
+#if defined(UTRACY_WINDOWS)
+		switch (WaitForSingleObject(utracy.quit, 1)) {
+		default:
+			LOG_DEBUG_ERROR;
+		case WAIT_OBJECT_0:
+			quitting = 1;
+			break;
+		case WAIT_TIMEOUT:
+			break;
 		}
+#elif defined(UTRACY_LINUX)
+		if (utracy.quit) {
+			break;
+		}
+
+		usleep(1000);
+#endif
 	}
 
+
 #if defined(UTRACY_WINDOWS)
+	CloseHandle(utracy.thread);
+	CloseHandle(utracy.quit);
+
 	ExitThread(0);
 #elif defined(UTRACY_LINUX)
 	pthread_exit(NULL);
@@ -1343,8 +1367,22 @@ char *UTRACY_WINDOWS_CDECL UTRACY_LINUX_CDECL init(int argc, char **argv) {
 
 #if defined(UTRACY_LINUX)
 	linux_main_tid = syscall(__NR_gettid);
-#endif
 
+	struct stat st = { 0 };
+	if (stat("./data/profiler", &st) == -1) {
+		if (stat("./data", &st) == -1) {
+			if (0 != mkdir("./data", 0777)) {
+				LOG_DEBUG_ERROR;
+				return "failed to create data directory";
+			}
+		}
+
+		if (0 != mkdir("./data/profiler", 0777)) {
+			LOG_DEBUG_ERROR;
+			return "failed to create data/profiler directory";
+		}
+	}
+#elif defined(UTRACY_WINDOWS)
 	utracy.quit = CreateEventA(NULL, TRUE, FALSE, NULL);
 	if(NULL == utracy.quit) {
 		LOG_DEBUG_ERROR;
@@ -1353,9 +1391,14 @@ char *UTRACY_WINDOWS_CDECL UTRACY_LINUX_CDECL init(int argc, char **argv) {
 
 	(void) CreateDirectoryW(L".\\data", NULL);
 	(void) CreateDirectoryW(L".\\data\\profiler", NULL);
+#endif
+
+#ifndef MAX_PATH
+#define MAX_PATH 260 // same as windows
+#endif
 
 	char ffilename[MAX_PATH];
-	snprintf(ffilename, MAX_PATH, ".\\data\\profiler\\%llu.utracy", utracy_tsc());
+	snprintf(ffilename, MAX_PATH, "./data/profiler/%llu.utracy", utracy_tsc());
 	utracy.fstream = fopen(ffilename, "wb");
 	if(NULL == utracy.fstream) {
 		LOG_DEBUG_ERROR;
@@ -1377,8 +1420,8 @@ char *UTRACY_WINDOWS_CDECL UTRACY_LINUX_CDECL init(int argc, char **argv) {
 	}
 
 #elif defined(UTRACY_LINUX)
-	pthread_t thr;
-	if(0 != pthread_create(&thr, NULL, utracy_server_thread_start, NULL)) {
+	utracy.quit = 0;
+	if (0 != pthread_create(&utracy.thread, NULL, utracy_server_thread_start, NULL)) {
 		LOG_DEBUG_ERROR;
 		return "pthread_create failed";
 	}
@@ -1399,6 +1442,7 @@ char *UTRACY_WINDOWS_CDECL UTRACY_LINUX_CDECL destroy(int argc, char **argv) {
 		return "not initialized";
 	}
 
+#if defined(UTRACY_WINDOWS)
 	(void) SetEvent(utracy.quit);
 
 	switch(WaitForSingleObject(utracy.thread, INFINITE)) {
@@ -1407,6 +1451,11 @@ char *UTRACY_WINDOWS_CDECL UTRACY_LINUX_CDECL destroy(int argc, char **argv) {
 		default:
 			LOG_DEBUG_ERROR;
 	}
+#elif defined(UTRACY_LINUX)
+	utracy.quit = 1;
+	void* thread_return;
+	pthread_join(utracy.thread, &thread_return);
+#endif
 
 	fclose(utracy.fstream);
 	initialized = 0;
