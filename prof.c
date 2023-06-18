@@ -322,7 +322,6 @@ struct event_zone_begin {
 
 struct event_zone_end {
 	int unsigned tid;
-	int unsigned padding;
 	_Alignas(8) long long timestamp;
 };
 
@@ -333,7 +332,6 @@ struct event_zone_color {
 
 struct event_frame_mark {
 	void *name;
-	int unsigned padding;
 	_Alignas(8) long long timestamp;
 };
 
