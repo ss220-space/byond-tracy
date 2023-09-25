@@ -1096,7 +1096,7 @@ static int unsigned const byond_offsets[][8] = {
 };
 
 #elif defined(UTRACY_LINUX)
-#	define BYOND_MAX_BUILD 1608
+#	define BYOND_MAX_BUILD 1614
 #	define BYOND_MIN_BUILD 1543
 #	define BYOND_VERSION_ADJUSTED(a) ((a) - BYOND_MIN_BUILD)
 
