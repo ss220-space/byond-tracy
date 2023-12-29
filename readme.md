@@ -4,6 +4,8 @@ Para-byond-tracy glues together a byond server the tracy profiler allowing you t
 
 Note that the files generated cannot be loaded straight into tracy. You must use `replay.py` to load the `.utracy` file and stream "it over the network" (localhost) into `capture.exe` as part of Tracy. You can stream straight into `Tracy.exe`, but this is not advised due to performance overhead.
 
+Update 2023-12-29: You can now use [https://github.com/AffectedArc07/ParaTracyReplay](https://github.com/AffectedArc07/ParaTracyReplay) to stream the files much faster than the python script.
+
 The above script requires the `lz4` library with the stream addon. The instructions for that are out of scope of this guide.
 
 A massive thanks to `mafemergency` for even making this possible. The below readme is adapted from the original repo (branch: `stream-to-file`) [https://github.com/mafemergency/byond-tracy/](https://github.com/mafemergency/byond-tracy/)
@@ -12,6 +14,17 @@ A massive thanks to `mafemergency` for even making this possible. The below read
 
 | windows  | linux    |
 | -------- | -------- |
+| 515.1623 |          |
+| 515.1618 | 515.1618 |
+| 515.1617 | 515.1617 |
+| 515.1616 | 515.1616 |
+| 515.1615 | 515.1615 |
+| 515.1614 | 515.1614 |
+| 515.1613 | 515.1613 |
+| 515.1612 |          |
+| 515.1611 | 515.1611 |
+| 515.1610 | 515.1610 |
+| 515.1609 | 515.1609 |
 | 515.1608 | 515.1608 |
 | 515.1607 | 515.1607 |
 | 515.1606 | 515.1606 |
