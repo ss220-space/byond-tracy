@@ -768,7 +768,13 @@ static int utracy_write(void const *const buf, size_t size) {
 }
 #else
 static int utracy_write(void const *const buf, size_t size) {
-	fwrite(buf, 1, size, utracy.fstream);
+	if(size != fwrite(buf, 1, size, utracy.fstream)) {
+		perror("fwrite");
+		fflush(utracy.fstream);
+		fsync(fileno(utracy.fstream));
+		fclose(utracy.fstream);
+		abort();
+	}
 	return 0;
 }
 #endif
@@ -1486,6 +1492,8 @@ char *UTRACY_WINDOWS_CDECL UTRACY_LINUX_CDECL init(int argc, char **argv) {
 #if defined(UTRACY_WINDOWS)
 	if(NULL == (utracy.thread = CreateThread(NULL, 0, utracy_server_thread_start, NULL, 0, NULL))) {
 		LOG_DEBUG_ERROR;
+		fflush(utracy.fstream);
+		fsync(fileno(utracy.fstream));
 		fclose(utracy.fstream);
 		return "CreateThread failed";
 	}
@@ -1494,6 +1502,9 @@ char *UTRACY_WINDOWS_CDECL UTRACY_LINUX_CDECL init(int argc, char **argv) {
 	utracy.quit = 0;
 	if (0 != pthread_create(&utracy.thread, NULL, utracy_server_thread_start, NULL)) {
 		LOG_DEBUG_ERROR;
+		fflush(utracy.fstream);
+		fsync(fileno(utracy.fstream));
+		fclose(utracy.fstream);
 		return "pthread_create failed";
 	}
 
@@ -1528,7 +1539,10 @@ char *UTRACY_WINDOWS_CDECL UTRACY_LINUX_CDECL destroy(int argc, char **argv) {
 	pthread_join(utracy.thread, &thread_return);
 #endif
 
+	fflush(utracy.fstream);
+	fsync(fileno(utracy.fstream));
 	fclose(utracy.fstream);
+	
 	initialized = 0;
 
 	return "0";
