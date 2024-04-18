@@ -4,9 +4,11 @@ Para-byond-tracy glues together a byond server the tracy profiler allowing you t
 
 Note that the files generated cannot be loaded straight into tracy. You must use `replay.py` to load the `.utracy` file and stream "it over the network" (localhost) into `capture.exe` as part of Tracy. You can stream straight into `Tracy.exe`, but this is not advised due to performance overhead.
 
+The above script requires the `lz4` library with the stream addon. The instructions for that are out of scope of this guide.
+
 Update 2023-12-29: You can now use [https://github.com/AffectedArc07/ParaTracyReplay](https://github.com/AffectedArc07/ParaTracyReplay) to stream the files much faster than the python script.
 
-The above script requires the `lz4` library with the stream addon. The instructions for that are out of scope of this guide.
+Update 2024-04-18: You can now use [https://github.com/Dimach/rtracy](https://github.com/Dimach/rtracy) to stream the files even faster than the C# code, as well as split traces and other cool things.
 
 A massive thanks to `mafemergency` for even making this possible. The below readme is adapted from the original repo (branch: `stream-to-file`) [https://github.com/mafemergency/byond-tracy/](https://github.com/mafemergency/byond-tracy/)
 
@@ -61,11 +63,11 @@ A massive thanks to `mafemergency` for even making this possible. The below read
 
 ## supported tracy versions
 
-`0.8.1` `0.8.2`
+None built in, you need to reply these.
 
 ## usage
 
-simply call `init` from `prof.dll` to begin collecting profile data and connect using [tracy-server](https://github.com/wolfpld/tracy/releases) `Tracy.exe`
+simply call `init` from `prof.dll` to begin writing to a file inside `data/profiler`
 
 ```dm
 /proc/prof_init()
