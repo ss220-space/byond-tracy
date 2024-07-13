@@ -78,76 +78,23 @@ simply call `init` from `prof.dll` to begin writing to a file inside `data/profi
 init will return the filename it writes to upon success - the filename will always start with `.`
 
 ```dm
-// In case you need to start the capture as soon as the server boots, uncomment the following lines and recompile:
-
-// /world/New()
-// 	prof_init()
-// 	. = ..()
-
-#ifndef PROF
-// Default automatic PROF detection.
-// On Windows, looks in the standard places for `prof.dll`.
-// On Linux, looks in `.`, `$LD_LIBRARY_PATH`, and `~/.byond/bin` for either of
-// `libprof.so` (preferred) or `prof` (old).
-
-/* This comment bypasses grep checks */ /var/__prof
-
-/proc/__detect_prof()
-	if (world.system_type == UNIX)
-		if (fexists("./libprof.so"))
-			// No need for LD_LIBRARY_PATH badness.
-			return __prof = "./libprof.so"
-		else if (fexists("./prof"))
-			// Old dumb filename.
-			return __prof = "./prof"
-		else if (fexists("[world.GetConfig("env", "HOME")]/.byond/bin/prof"))
-			// Old dumb filename in `~/.byond/bin`.
-			return __prof = "prof"
-		else
-			// It's not in the current directory, so try others
-			return __prof = "libprof.so"
-	else
-		return __prof = "prof"
-
-#define PROF (__prof || __detect_prof())
-#endif
-
-// Handle 515 call() -> call_ext() changes
-#if DM_VERSION >= 515
-#define PROF_CALL call_ext
-#else
-#define PROF_CALL call
-#endif
-
-GLOBAL_VAR_INIT(profiler_enabled, FALSE)
-
-/**
- * Starts Tracy and returns a string filename whenever
- */
+// returns a string filename whenever
 /proc/prof_init()
-	var/init = PROF_CALL(PROF, "init")()
-	if("0" != init) CRASH("[PROF] init error: [init]")
-	GLOB.profiler_enabled = TRUE
-	if(length(init) != 0 && init[1] == ".") // if first character is ., then it returned the output filename
-		return init
+    var/lib
 
-/**
- * Stops Tracy
- */
-/proc/prof_stop()
-	if(!GLOB.profiler_enabled)
-		return
+    switch(world.system_type)
+        if(MS_WINDOWS) lib = "prof.dll"
+        if(UNIX) lib = "libprof.so"
+        else CRASH("unsupported platform")
 
-	var/destroy = PROF_CALL(PROF, "destroy")()
-	if("0" != destroy) CRASH("[PROF] destroy error: [destroy]")
-	GLOB.profiler_enabled = FALSE
+    var/init = call_ext(lib, "init")()
+    if(length(init) != 0 && init[1] == ".") // if first character is ., then it returned the output filename
+        return init
+    else if("0" != init)
+        CRASH("[lib] init error: [init]")
 
 /world/New()
     var/utracy_filename = prof_init()
-    . = ..()
-
-/world/Del()
-    prof_stop()
     . = ..()
 ```
 
