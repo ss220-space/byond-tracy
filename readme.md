@@ -19,6 +19,7 @@ A massive thanks to `mafemergency` for even making this possible. The below read
 
 | windows  | linux    |
 | -------- | -------- |
+| 515.1642 | 515.1642 |
 | 515.1637 | 515.1637 |
 | 515.1636 | 515.1636 |
 | 515.1635 | 515.1635 |
@@ -174,7 +175,7 @@ clang.exe -std=c11 -m32 -shared -Ofast3 -DNDEBUG -fuse-ld=lld-link prof.c -lws2_
 ```
 
 ```console
-gcc -std=c11 -m32 -shared -fPIC -Ofast -s -DNDEBUG prof.c -pthread -o libprof.so
+gcc -D_FILE_OFFSET_BITS=64 -std=c11 -m32 -shared -fPIC -Ofast -s -DNDEBUG prof.c -pthread -o libprof.so
 ```
 
 ## Remarks
