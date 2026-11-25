@@ -370,6 +370,13 @@ struct event {
 	};
 };
 
+#ifndef UTRACY_MAX_CAPTURE_BYTES
+#	define UTRACY_MAX_CAPTURE_BYTES 0ull
+#endif
+
+/* written only by the writer thread */
+static long long unsigned utracy_bytes_written;
+
 /* data */
 static struct {
 	struct string ***strings;
@@ -416,6 +423,8 @@ static struct {
     event_pipe_t* quit;
 
 	FILE* fstream;
+	/* cleared by destroy() or the byte cap; hooks stay installed and drop events while it is false */
+	atomic_bool capturing;
 
 	struct {
 		int unsigned producer_tail_cache;
@@ -533,6 +542,10 @@ int event_queue_init(void) {
 
 UTRACY_INTERNAL UTRACY_INLINE
 void event_queue_push(struct event const *const event) {
+    if(unlikely(!atomic_load_relaxed(&utracy.capturing))) {
+        return;
+    }
+
     int unsigned store = atomic_load_relaxed(&utracy.queue.head);
     int unsigned next_store = store + 1;
 
@@ -541,6 +554,9 @@ void event_queue_push(struct event const *const event) {
     }
 
     while(unlikely(next_store == utracy.queue.producer_tail_cache)) {
+        if(unlikely(!atomic_load_relaxed(&utracy.capturing))) {
+            return;
+        }
         utracy.queue.producer_tail_cache = atomic_load_acquire(&utracy.queue.tail);
     }
 
@@ -824,6 +840,7 @@ long long calibrate_delay(void) {
 
 	int unsigned const iterations = (EVENT_QUEUE_CAPACITY / 2u) - 1u;
 
+	atomic_store_seqcst(&utracy.capturing, true);
 	long long clk0 = utracy_tsc();
 
 	for(int unsigned i=0; i<iterations; i++) {
@@ -837,6 +854,7 @@ long long calibrate_delay(void) {
 
 	struct event evt;
 	while(0 == event_queue_pop(&evt));
+	atomic_store_seqcst(&utracy.capturing, false);
 
 	return dclk / (long long) (iterations * 2);
 }
@@ -865,7 +883,9 @@ int utracy_write(void const *const buf, size_t size) {
 #else
 UTRACY_INTERNAL
 int utracy_write(void const *const buf, size_t size) {
-	if(utracy.fstream != NULL) fwrite(buf, 1, size, utracy.fstream);
+	if(utracy.fstream != NULL) {
+		utracy_bytes_written += fwrite(buf, 1, size, utracy.fstream);
+	}
 	return 0;
 }
 #endif
@@ -983,6 +1003,13 @@ int utracy_server_thread_start(void* arg) {
 		struct event evt;
 		while(0 == event_queue_pop(&evt)) {
 			(void) utracy_write(&evt, sizeof(evt));
+#if UTRACY_MAX_CAPTURE_BYTES > 0
+			if(utracy_bytes_written >= UTRACY_MAX_CAPTURE_BYTES && atomic_load_relaxed(&utracy.capturing)) {
+				atomic_store_seqcst(&utracy.capturing, false);
+				printf("utracy: capture reached %llu bytes, stopped\n", utracy_bytes_written);
+				(void) fflush(stdout);
+			}
+#endif
 		}
 		switch (wait_for_event_pipe(utracy.quit, 1)) {
 			case 0:
@@ -1190,6 +1217,7 @@ void build_srclocs(void) {
 
 /* byond api */
 static bool initialized = false;
+static bool hooks_installed = false;
 
 UTRACY_EXTERNAL
 char *UTRACY_WINDOWS_CDECL UTRACY_LINUX_CDECL init(int argc, char **argv) {
@@ -1200,6 +1228,10 @@ char *UTRACY_WINDOWS_CDECL UTRACY_LINUX_CDECL init(int argc, char **argv) {
 
 	if(initialized) {
 		return "already initialized";
+	}
+
+	if(hooks_installed) {
+		return "the profiler already ran in this process and cannot start again";
 	}
 
 	bool block_start = false;
@@ -1306,6 +1338,7 @@ char *UTRACY_WINDOWS_CDECL UTRACY_LINUX_CDECL init(int argc, char **argv) {
 
 	LOG_INFO("byond build = %d\n", byond_build);
 
+	hooks_installed = true;
 	byond.orig_exec_proc = hook((void *) exec_proc, byond.exec_proc, prologues[0], byond.trampoline.exec_proc);
 	if(NULL == byond.orig_exec_proc) {
 		LOG_DEBUG_ERROR;
@@ -1398,6 +1431,7 @@ char *UTRACY_WINDOWS_CDECL UTRACY_LINUX_CDECL init(int argc, char **argv) {
 	utracy.info.exec_time = unix_timestamp();
 	utracy.info.init_end = utracy_tsc();
 
+	utracy_bytes_written = 0;
 	thrd_t thread;
     if (thrd_create(&thread, utracy_server_thread_start, (void*)profiler_connected_event) != thrd_success) {
         LOG_DEBUG_ERROR;
@@ -1408,8 +1442,11 @@ char *UTRACY_WINDOWS_CDECL UTRACY_LINUX_CDECL init(int argc, char **argv) {
     }
 
     utracy.thread = thread;
+	atomic_store_seqcst(&utracy.capturing, true);
 
 	initialized = true;
+	printf("utracy: capturing to %s\n", ffilename);
+	(void) fflush(stdout);
 
 	if (block_start) {
 		printf("blocking until initialized\n");
@@ -1418,7 +1455,7 @@ char *UTRACY_WINDOWS_CDECL UTRACY_LINUX_CDECL init(int argc, char **argv) {
         close_event_pipe(profiler_connected_event);
     }
 
-	return ffilename;
+	return "0";
 }
 
 UTRACY_EXTERNAL
@@ -1434,6 +1471,7 @@ char *UTRACY_WINDOWS_CDECL UTRACY_LINUX_CDECL destroy(int argc, char **argv) {
 		return "already shutting down";
 	}
 
+    atomic_store_seqcst(&utracy.capturing, false);
     set_event_pipe(utracy.quit);
     
     int thread_result;

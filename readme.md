@@ -62,10 +62,13 @@ None built in, you need to reply these.
 
 simply call `init` from `prof.dll` to begin writing to a file inside `data/profiler`
 
-init will return the filename it writes to upon success - the filename will always start with `.`
+init returns `"0"` on success and prints the file it writes to (`utracy: capturing to <path>`) to the server log. any other return value is an error message.
+
+call `destroy` to stop the capture: it stops recording, writes out the queued events and closes the file. the server keeps running.
+
+the hooks stay installed after `destroy`, so a process can capture only once: a second `init` returns an error instead of starting again. restart the server for a new capture.
 
 ```dm
-// returns a string filename whenever
 /proc/prof_init()
     var/lib
 
@@ -75,13 +78,11 @@ init will return the filename it writes to upon success - the filename will alwa
         else CRASH("unsupported platform")
 
     var/init = call_ext(lib, "init")()
-    if(length(init) != 0 && init[1] == ".") // if first character is ., then it returned the output filename
-        return init
-    else if("0" != init)
+    if("0" != init)
         CRASH("[lib] init error: [init]")
 
 /world/New()
-    var/utracy_filename = prof_init()
+    prof_init()
     . = ..()
 ```
 
@@ -104,6 +105,8 @@ clang.exe -std=c11 -m32 -shared -Ofast3 -DNDEBUG -fuse-ld=lld-link prof.c -lws2_
 ```console
 gcc -D_FILE_OFFSET_BITS=64 -std=c11 -m32 -shared -fPIC -Ofast -s -DNDEBUG prof.c -pthread -o libprof.so
 ```
+
+to cap the size of a capture, build with `-DUTRACY_MAX_CAPTURE_BYTES=<bytes>` (for example `10000000000ull` for 10 GB). past the cap the profiler stops recording on its own and closes the file on `destroy`. without the define there is no cap.
 
 ## remarks
 
